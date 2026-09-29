@@ -155,7 +155,54 @@ case "\$ALLOWED" in
     exit 1
     ;;
 esac
-mkdir -p "\$ALLOWED" "\$ALLOWED/time/api" "\$ALLOWED/time/assets" "\$ALLOWED/time/config" "\$ALLOWED/static"
+
+# Ensure target exists and is writable by the deploy user.
+mkdir -p "\$ALLOWED" "\$ALLOWED/time/api" "\$ALLOWED/time/assets" "\$ALLOWED/time/config" "\$ALLOWED/scripts"
+if ! touch "\$ALLOWED/_write_test" 2>/dev/null; then
+  echo "::error::Site root is not writable by \$(id -un): \$ALLOWED"
+  echo "::error::On the VPS (as root), run once:"
+  echo "::error::  sudo chown -R cloudmosaicaissh:cloudmosaicai \$ALLOWED"
+  echo "::error::  sudo chmod -R u+rwX,g+rwX \$ALLOWED"
+  exit 1
+fi
+rm -f "\$ALLOWED/_write_test"
+
+# Root-owned images/static (common after panel uploads) block rsync temp files.
+# If the parent is writable, rename them aside and recreate empty dirs we own.
+ensure_writable_dir() {
+  local dir="\$1"
+  local path="\$ALLOWED/\$dir"
+  if [[ -d "\$path" ]] && touch "\$path/.write_probe" 2>/dev/null; then
+    rm -f "\$path/.write_probe"
+    return 0
+  fi
+  if [[ -e "\$path" ]]; then
+    echo "Path not writable by deploy user: \$path (owner=\$(stat -c '%U:%G' "\$path" 2>/dev/null || echo unknown))"
+    # Prefer a dot-dir so leftovers are less web-exposed; root must delete later.
+    local aside="\$ALLOWED/.\${dir}.__root_old.\$(date +%s)"
+    if mv "\$path" "\$aside" 2>/dev/null; then
+      echo "Moved unwritable '\$dir' aside → \$aside"
+      echo "Ask root to delete later: sudo rm -rf \$aside"
+    else
+      echo "::error::Cannot write to \$path and cannot rename it aside."
+      echo "::error::On the VPS (as root), run once:"
+      echo "::error::  sudo chown -R cloudmosaicaissh:cloudmosaicai \$ALLOWED/images \$ALLOWED/static"
+      echo "::error::  sudo chmod -R u+rwX,g+rwX \$ALLOWED/images \$ALLOWED/static"
+      exit 1
+    fi
+  fi
+  mkdir -p "\$path"
+  chmod 775 "\$path" || true
+  if ! touch "\$path/.write_probe" 2>/dev/null; then
+    echo "::error::Still cannot write \$path after recreate."
+    exit 1
+  fi
+  rm -f "\$path/.write_probe"
+}
+
+ensure_writable_dir images
+ensure_writable_dir static
+mkdir -p "\$ALLOWED/static/css" "\$ALLOWED/static/js" "\$ALLOWED/static/media"
 chmod -R u+rwX "\$ALLOWED" 2>/dev/null || true
 echo "PREFLIGHT_OK user=\$(id -un) path=\$ALLOWED"
 REMOTE
@@ -174,6 +221,12 @@ rsync -rltvz --protocol=29 --delete \
   --exclude 'scripts/local-router.php' \
   --exclude 'time/config/db.local.php' \
   --exclude 'time/config/db.local.php.example' \
+  --exclude '.images.__root_old/' \
+  --exclude '.static.__root_old/' \
+  --exclude 'images.__root_old/' \
+  --exclude 'static.__root_old/' \
+  --exclude '*.__root_old/' \
+  --exclude '*.__root_old.*/' \
   -e "$SSH_WRAP" \
   "${ROOT}/" "${USER}@${HOST}:${ALLOWED_PATH}/"
 rc=$?
@@ -198,10 +251,10 @@ done
 if [[ -f "\$ALLOWED/time/config/db.local.php" ]]; then
   echo "Preserved time/config/db.local.php"
 fi
-find "\$ALLOWED" -type d -exec chmod 755 {} \;
-find "\$ALLOWED" -type f -exec chmod 644 {} \;
+find "\$ALLOWED" -path '*/.*__root_old*' -prune -o -type d -exec chmod 755 {} \; 2>/dev/null || true
+find "\$ALLOWED" -path '*/.*__root_old*' -prune -o -type f -exec chmod 644 {} \; 2>/dev/null || true
 chmod 755 "\$ALLOWED/scripts" "\$ALLOWED/time/scripts" 2>/dev/null || true
-find "\$ALLOWED" -type f -name '*.sh' -exec chmod 755 {} \;
+find "\$ALLOWED" -path '*/.*__root_old*' -prune -o -type f -name '*.sh' -exec chmod 755 {} \; 2>/dev/null || true
 echo "Verify OK + permissions fixed → \$ALLOWED only"
 if command -v curl >/dev/null 2>&1; then
   body="\$(curl -fsS --max-time 8 https://cloudmosaic.ai/time/hello.php 2>/dev/null || true)"
