@@ -1,0 +1,12 @@
+# Hostinger uses LiteSpeed (lsphp). Do NOT force apache php module types.
+DirectoryIndex index.html index.php
+Options -Indexes
+
+# Ensure .php is handled by Hostinger LiteSpeed PHP
+<IfModule LiteSpeed>
+  AddHandler application/x-httpd-lsphp .php
+</IfModule>
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+</IfModule>

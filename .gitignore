@@ -1,0 +1,27 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+*.log
+
+# Local secrets — never commit production DB credentials
+time/config/db.local.php
+
+# Local scratch
+_write_test
+*.bak
+*.local.php
+
+# Node (if React source is added later)
+node_modules/
+npm-debug.log*
+.env
+.env.local
+.env.*.local
+
+# Build caches
+.cache/
+dist/
+build/

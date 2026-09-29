@@ -1,0 +1,98 @@
+name: Deploy to Hostinger VPS
+
+# Pushes to main copy this repo into ONE folder on the VPS:
+#   /home/cloudmosaicaissh/htdocs/cloudmosaic.ai
+# Nothing else on the server is written.
+# time/config/db.local.php on the server is never overwritten.
+#
+# Required GitHub Actions secrets (Settings → Secrets and variables → Actions):
+#   HOSTINGER_HOST      From hPanel → Advanced → SSH Access (IP or ssh hostname)
+#   HOSTINGER_SSH_KEY   Private key matching authorized_keys for cloudmosaicaissh
+# Optional:
+#   HOSTINGER_PORT      Usually 65002 on Hostinger Cloud/shared; 22 on VPS
+#   HOSTINGER_USER      must be cloudmosaicaissh if set
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-cloudmosaic-ai
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Rsync to cloudmosaic.ai only
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Require Hostinger secrets
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
+          HOSTINGER_SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
+          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "${HOSTINGER_HOST:-}" ]] || missing+=(HOSTINGER_HOST)
+          [[ -n "${HOSTINGER_SSH_KEY:-}" ]] || missing+=(HOSTINGER_SSH_KEY)
+          if [[ "${#missing[@]}" -gt 0 ]]; then
+            echo "::error::Missing GitHub Actions secrets: ${missing[*]}"
+            echo "Add them at Repository → Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          if [[ -n "${HOSTINGER_USER:-}" && "${HOSTINGER_USER}" != "cloudmosaicaissh" ]]; then
+            echo "::error::HOSTINGER_USER must be cloudmosaicaissh (got ${HOSTINGER_USER})"
+            exit 1
+          fi
+          if ! printf '%s' "$HOSTINGER_SSH_KEY" | grep -q 'BEGIN.*PRIVATE KEY'; then
+            echo "::error::HOSTINGER_SSH_KEY is not a private key (missing BEGIN PRIVATE KEY)."
+            exit 1
+          fi
+          echo "Secrets look present. HOSTINGER_HOST length=${#HOSTINGER_HOST}, key length=${#HOSTINGER_SSH_KEY}"
+
+      - name: Install SSH key
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
+          HOSTINGER_PORT: ${{ secrets.HOSTINGER_PORT }}
+          HOSTINGER_SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          umask 177
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          KEY_FILE="$HOME/.ssh/hostinger_deploy"
+          printf '%s\n' "$HOSTINGER_SSH_KEY" | sed 's/\r$//' > "$KEY_FILE"
+          # Fix keys pasted with literal \n
+          if grep -q '\\n' "$KEY_FILE"; then
+            python3 - <<'PY'
+          from pathlib import Path
+          p = Path.home() / '.ssh' / 'hostinger_deploy'
+          t = p.read_text()
+          if '\\n' in t and 'BEGIN' in t:
+              p.write_text(t.replace('\\n', '\n'))
+          PY
+          fi
+          chmod 600 "$KEY_FILE"
+          ssh-keygen -y -f "$KEY_FILE" >/dev/null
+          echo "Private key parses OK. Public fingerprint:"
+          ssh-keygen -lf "$KEY_FILE"
+          for scan_port in "${HOSTINGER_PORT:-22}" 22 65002; do
+            ssh-keyscan -p "$scan_port" -H "$HOSTINGER_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          done
+
+      - name: Deploy into cloudmosaic.ai folder only
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
+          HOSTINGER_PORT: ${{ secrets.HOSTINGER_PORT }}
+          HOSTINGER_USER: cloudmosaicaissh
+        run: |
+          set -euo pipefail
+          export HOSTINGER_SSH_KEY_FILE="$HOME/.ssh/hostinger_deploy"
+          chmod +x scripts/deploy-hostinger.sh
+          scripts/deploy-hostinger.sh

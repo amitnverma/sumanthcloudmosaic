@@ -1,0 +1,19 @@
+# CloudMosaic local/prod Apache (XAMPP) — SPA fallback for React Router
+Options -Indexes
+DirectoryIndex index.html
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /cloudmosaic/
+
+  # Do not rewrite real files or directories (static assets, /time PHP app, etc.)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Leave /time/ to its own handlers
+  RewriteRule ^time(/|$) - [L]
+
+  # SPA: send unknown routes to index.html
+  RewriteRule ^ index.html [L]
+</IfModule>

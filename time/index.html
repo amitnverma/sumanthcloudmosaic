@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Time Tracking</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/app.css?v=20260908b">
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <h1>Time Tracking</h1>
+          <p class="brand-sub">Multi-project timesheet</p>
+        </div>
+      </div>
+      <nav class="tabs" role="tablist">
+        <button type="button" class="tab active" data-tab="enter" role="tab" aria-selected="true">Enter Time</button>
+        <button type="button" class="tab" data-tab="history" role="tab" aria-selected="false">History</button>
+        <button type="button" class="tab" data-tab="projects" role="tab" aria-selected="false">Projects</button>
+        <button type="button" class="tab" data-tab="settings" role="tab" aria-selected="false">Settings</button>
+      </nav>
+    </header>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+    <!-- Enter Time -->
+    <section id="panel-enter" class="panel active" role="tabpanel">
+      <div class="toolbar">
+        <div class="field-group">
+          <label for="enter-from">From</label>
+          <input type="date" id="enter-from">
+        </div>
+        <div class="field-group">
+          <label for="enter-to">To</label>
+          <input type="date" id="enter-to">
+        </div>
+        <div class="field-group week-nav">
+          <button type="button" class="btn btn-ghost" id="enter-prev-week" title="Previous week">←</button>
+          <button type="button" class="btn btn-ghost" id="enter-this-week">This week</button>
+          <button type="button" class="btn btn-ghost" id="enter-next-week" title="Next week">→</button>
+        </div>
+        <div class="field-group grow">
+          <label for="enter-projects">Projects</label>
+          <select id="enter-projects" multiple size="4"></select>
+          <p class="hint">Hold Cmd/Ctrl to select multiple. Weekends follow Settings.</p>
+        </div>
+        <div class="toolbar-actions">
+          <button type="button" class="btn btn-secondary" id="enter-load">Load grid</button>
+          <button type="button" class="btn btn-primary" id="enter-save">Save hours</button>
+        </div>
+      </div>
+
+      <div class="summary-bar capacity-bar sticky-summary" id="enter-summary" hidden>
+        <div class="capacity-week" id="enter-week-capacity"></div>
+        <div class="capacity-days" id="enter-day-hint"></div>
+        <div class="capacity-projects" id="enter-project-hint"></div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data-table entry-grid" id="enter-grid">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th>Date</th>
+              <th>Day</th>
+              <th class="col-hours">Hours</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="enter-tbody">
+            <tr class="empty-row">
+              <td colspan="5">Select a date range and one or more projects, then click Load grid.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- History -->
+    <section id="panel-history" class="panel" role="tabpanel" hidden>
+      <div class="toolbar">
+        <div class="field-group">
+          <label for="history-from">From</label>
+          <input type="date" id="history-from">
+        </div>
+        <div class="field-group">
+          <label for="history-to">To</label>
+          <input type="date" id="history-to">
+        </div>
+        <div class="field-group week-nav">
+          <button type="button" class="btn btn-ghost" id="history-prev-week">←</button>
+          <button type="button" class="btn btn-ghost" id="history-this-week">This week</button>
+          <button type="button" class="btn btn-ghost" id="history-next-week">→</button>
+        </div>
+        <div class="field-group grow">
+          <label for="history-projects">Projects (optional)</label>
+          <select id="history-projects" multiple size="3"></select>
+        </div>
+        <div class="toolbar-actions">
+          <button type="button" class="btn btn-secondary" id="history-refresh">Refresh</button>
+          <button type="button" class="btn btn-secondary" id="history-export" title="Download Excel-compatible CSV for this range">Export Excel</button>
+          <label class="btn btn-secondary btn-file" title="Import Excel/CSV exported from this app">
+            Import Excel
+            <input type="file" id="history-import" accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+          </label>
+          <button type="button" class="btn btn-danger" id="history-delete-range">Delete range</button>
+        </div>
+      </div>
+
+      <div class="summary-bar" id="history-summary">
+        <span class="history-total-pill" id="history-total">0.00 h total</span>
+        <div class="chips" id="history-chips"></div>
+      </div>
+
+      <div class="table-wrap history-wrap">
+        <table class="data-table history-table" id="history-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Project</th>
+              <th class="col-hours">Hours</th>
+              <th>Notes</th>
+              <th class="col-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="history-tbody">
+            <tr class="empty-row">
+              <td colspan="5">No entries in this range.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Projects -->
+    <section id="panel-projects" class="panel" role="tabpanel" hidden>
+      <div class="toolbar">
+        <h2 class="panel-title">Manage projects</h2>
+        <div class="toolbar-actions">
+          <button type="button" class="btn btn-primary" id="project-add">Add project</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="projects-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Name</th>
+              <th>Code</th>
+              <th>Status</th>
+              <th>Order</th>
+              <th class="col-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="projects-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section id="panel-settings" class="panel" role="tabpanel" hidden>
+      <div class="toolbar">
+        <h2 class="panel-title">Configurable options</h2>
+        <div class="toolbar-actions">
+          <button type="button" class="btn btn-primary" id="settings-save">Save settings</button>
+        </div>
+      </div>
+      <form id="settings-form" class="settings-form">
+        <div class="field-group">
+          <label for="set-week-start">Week starts on</label>
+          <select id="set-week-start">
+            <option value="0">Sunday</option>
+            <option value="1">Monday</option>
+            <option value="2">Tuesday</option>
+            <option value="3">Wednesday</option>
+            <option value="4">Thursday</option>
+            <option value="5">Friday</option>
+            <option value="6">Saturday</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label for="set-max-hours">Max hours per day</label>
+          <input type="number" id="set-max-hours" min="1" max="24" step="0.25">
+        </div>
+        <div class="field-group">
+          <label for="set-max-week">Max hours per week</label>
+          <input type="number" id="set-max-week" min="1" max="168" step="0.25">
+        </div>
+        <div class="field-group">
+          <label for="set-increment">Hour increment</label>
+          <select id="set-increment">
+            <option value="0.25">0.25 (15 min)</option>
+            <option value="0.5">0.5 (30 min)</option>
+            <option value="1">1.0 (1 hour)</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label for="set-range-days">Default range (days)</label>
+          <input type="number" id="set-range-days" min="1" max="31" step="1">
+        </div>
+        <div class="field-group">
+          <label for="set-timezone">Timezone</label>
+          <input type="text" id="set-timezone" placeholder="America/New_York">
+        </div>
+        <div class="field-group check-row">
+          <label class="check-label">
+            <input type="checkbox" id="set-include-weekends">
+            Include weekends in date range
+          </label>
+        </div>
+        <div class="field-group check-row">
+          <label class="check-label">
+            <input type="checkbox" id="set-require-notes">
+            Require notes on save
+          </label>
+        </div>
+        <div class="field-group check-row">
+          <label class="check-label">
+            <input type="checkbox" id="set-allow-future">
+            Allow future dates
+          </label>
+        </div>
+      </form>
+
+      <div class="db-settings">
+        <div class="toolbar">
+          <h2 class="panel-title">Database connection</h2>
+          <p class="hint db-status" id="db-status">Checking…</p>
+        </div>
+        <form id="db-form" class="settings-form">
+          <div class="field-group">
+            <label for="db-host">Host</label>
+            <input type="text" id="db-host" placeholder="localhost" autocomplete="off">
+          </div>
+          <div class="field-group">
+            <label for="db-name">Database name</label>
+            <input type="text" id="db-name" placeholder="timetracking" autocomplete="off">
+          </div>
+          <div class="field-group">
+            <label for="db-user">Username</label>
+            <input type="text" id="db-user" placeholder="db user" autocomplete="off">
+          </div>
+          <div class="field-group">
+            <label for="db-pass">Password</label>
+            <input type="password" id="db-pass" placeholder="Leave blank to keep current" autocomplete="new-password">
+          </div>
+          <div class="field-group check-row">
+            <label class="check-label">
+              <input type="checkbox" id="db-install-schema">
+              Create / update tables after save
+            </label>
+          </div>
+        </form>
+        <div class="toolbar-actions db-actions">
+          <button type="button" class="btn btn-ghost" id="db-test">Test connection</button>
+          <button type="button" class="btn btn-primary" id="db-save">Save database</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- PHP not executing (nginx serving source) — must fix before DB setup -->
+  <div id="php-setup-overlay" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-dialog modal-dialog-wide" role="dialog" aria-labelledby="php-setup-title">
+      <h3 id="php-setup-title">PHP is not running for /time</h3>
+      <p class="hint" id="php-setup-summary">
+        This Hostinger site is on nginx and is serving <code>.php</code> files as downloads instead of executing them.
+        Database setup cannot continue until PHP works. Changes stay under the <code>time</code> folder only.
+      </p>
+      <ol class="setup-steps">
+        <li><strong>Most reliable:</strong> CloudPanel → Sites → <code>cloudmosaic.ai</code> → Vhost / Nginx → <strong>Additional Nginx Directives</strong>. Paste the contents of <code>scripts/nginx-time-php.snippet.conf</code>, save, reload nginx.</li>
+        <li>Or as root re-run (fixed to target the HTTPS vhost, not the port-80 redirect):
+          <code class="setup-code">sudo bash /home/cloudmosaicaissh/htdocs/cloudmosaic.ai/time/scripts/enable-php-for-time.sh</code>
+        </li>
+        <li>If it still fails, run and check output:
+          <code class="setup-code">sudo bash /home/cloudmosaicaissh/htdocs/cloudmosaic.ai/time/scripts/diagnose-php-nginx.sh</code>
+        </li>
+        <li>Open <a href="hello.php" target="_blank" rel="noopener">hello.php</a> — you must see JSON (<code>ok: true</code>), not PHP source.</li>
+        <li>Click Recheck, then enter DB credentials (tables can already exist — uncheck Create tables).</li>
+      </ol>
+      <p class="hint">
+        Alternate: CloudPanel → Add Site → PHP site on subdomain <code>time.cloudmosaic.ai</code> with root set to this same <code>time</code> folder.
+      </p>
+      <p class="hint">
+        Tables alternate (once a MySQL DB exists): in phpMyAdmin select your DB → Import →
+        <code>sql/tables-only.sql</code>, then enter credentials here with “Create tables” unchecked.
+      </p>
+      <p class="hint error-text" id="php-setup-error" hidden></p>
+      <div class="modal-actions">
+        <a class="btn btn-ghost" href="hello.php" target="_blank" rel="noopener">Open hello.php</a>
+        <button type="button" class="btn btn-primary" id="php-setup-recheck">Recheck PHP</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DB setup overlay (shown when PHP works but DB is not ready) -->
+  <div id="db-setup-overlay" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-dialog modal-dialog-wide" role="dialog" aria-labelledby="db-setup-title">
+      <h3 id="db-setup-title">Connect your database</h3>
+      <p class="hint">Enter the Hostinger MySQL details for this app. Host is usually <code>localhost</code>.</p>
+      <form id="db-setup-form">
+        <div class="field-group">
+          <label for="setup-db-host">Host</label>
+          <input type="text" id="setup-db-host" value="localhost" required>
+        </div>
+        <div class="field-group">
+          <label for="setup-db-name">Database name</label>
+          <input type="text" id="setup-db-name" required>
+        </div>
+        <div class="field-group">
+          <label for="setup-db-user">Username</label>
+          <input type="text" id="setup-db-user" required>
+        </div>
+        <div class="field-group">
+          <label for="setup-db-pass">Password</label>
+          <input type="password" id="setup-db-pass">
+        </div>
+        <div class="field-group check-row">
+          <label class="check-label">
+            <input type="checkbox" id="setup-db-install" checked>
+            Create tables now
+          </label>
+        </div>
+        <p class="hint">If you already imported <code>sql/tables-only.sql</code> in phpMyAdmin, uncheck “Create tables now”.</p>
+        <p class="hint error-text" id="db-setup-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="setup-db-test">Test</button>
+          <button type="submit" class="btn btn-primary">Save &amp; continue</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Project modal -->
+  <div id="project-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-dialog" role="dialog" aria-labelledby="project-modal-title">
+      <h3 id="project-modal-title">Add project</h3>
+      <form id="project-form">
+        <input type="hidden" id="project-id">
+        <div class="field-group">
+          <label for="project-name">Name</label>
+          <input type="text" id="project-name" required maxlength="255">
+        </div>
+        <div class="field-group">
+          <label for="project-code">Code</label>
+          <input type="text" id="project-code" maxlength="50" placeholder="Optional">
+        </div>
+        <div class="field-group">
+          <label for="project-color">Color</label>
+          <input type="color" id="project-color" value="#3d5a80">
+        </div>
+        <div class="field-group">
+          <label for="project-sort">Sort order</label>
+          <input type="number" id="project-sort" value="0" step="1">
+        </div>
+        <div class="field-group check-row">
+          <label class="check-label">
+            <input type="checkbox" id="project-active" checked>
+            Active
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Entry edit modal -->
+  <div id="entry-modal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-dialog" role="dialog" aria-labelledby="entry-modal-title">
+      <h3 id="entry-modal-title">Edit entry</h3>
+      <form id="entry-form">
+        <input type="hidden" id="entry-id">
+        <div class="field-group">
+          <label for="entry-project">Project</label>
+          <select id="entry-project" required></select>
+        </div>
+        <div class="field-group">
+          <label for="entry-date">Date</label>
+          <input type="date" id="entry-date" required>
+        </div>
+        <div class="field-group">
+          <label for="entry-hours">Hours</label>
+          <input type="number" id="entry-hours" min="0" max="24" step="0.25" required>
+        </div>
+        <div class="field-group">
+          <label for="entry-notes">Notes</label>
+          <input type="text" id="entry-notes" maxlength="500">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
+          <button type="submit" class="btn btn-primary">Update</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="assets/js/app.js?v=20260908b"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+<?php
+/**
+ * Copy this file to db.local.php and adjust for your environment.
+ * db.local.php is gitignored — keep production credentials only on the server.
+ *
+ * XAMPP local defaults:
+ */
+$host = 'localhost';
+$db   = 'timetracking';
+$user = 'root';
+$pass = '';

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://Muralisai0307.github.io/cloudmosaic-react/sitemap.xml
